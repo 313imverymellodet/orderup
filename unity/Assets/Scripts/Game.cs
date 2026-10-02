@@ -44,7 +44,7 @@ public class Game : MonoBehaviour
         WebGLInput.captureAllKeyboardInput = false;
 #endif
         var url = Application.absoluteURL;
-        Dev = url.Contains("dev=1"); AutoPlay = url.Contains("bot=1"); AutoDrive = AutoPlay || (Dev && url.Contains("autodrive=1"));
+        Dev = url.Contains("dev=1") && (url.Contains("://localhost") || url.Contains("://127.0.0.1"));   // cheats never on the live site AutoPlay = url.Contains("bot=1"); AutoDrive = AutoPlay || (Dev && url.Contains("autodrive=1"));
         DevCam.Install(Dev);
         if (Dev && url.Contains("short=1")) Shift = 25f;
         var json = PlayerPrefs.GetString("ou_save", "");
@@ -474,6 +474,7 @@ public class Game : MonoBehaviour
     public void OpenOnline() { if (State != St.Menu) GoMenu(); WebBridge.NetOpen(Def.id, Save.look); }
     public void ToggleMute() { Save.muted = !Save.muted; Sfx.I.SetMuted(Save.muted); Persist(); }
     public void Quit() { Time.timeScale = 1; if (Mode != Net.Solo) WebBridge.NetLeave(); GoMenu(); }
+    void OnApplicationFocus(bool f) { if (!f && Mode == Net.Solo && State != St.Menu && Time.timeScale > 0 && !AutoPlay) Pause(); }
     public void Pause() { if (State == St.Menu) return; if (Mode == Net.Solo) Time.timeScale = 0; UI.I.ShowPause(Mode != Net.Solo); }
     public void Resume() { Time.timeScale = 1; UI.I.CloseScreens(); }
 

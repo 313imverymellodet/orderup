@@ -39,7 +39,7 @@ public static class OrderBuild
         PlayerSettings.productName = "Order Up";
         PlayerSettings.bundleVersion = "1.0.0";
         PlayerSettings.colorSpace = ColorSpace.Gamma;
-        PlayerSettings.runInBackground = false;
+        PlayerSettings.runInBackground = true;   // online matches must keep simulating when the window loses focus
         PlayerSettings.SplashScreen.show = false;
         PlayerSettings.WebGL.template = "PROJECT:OrderUp";
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Brotli;

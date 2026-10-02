@@ -12,6 +12,7 @@ public class UI : MonoBehaviour
     RectTransform root, hud, screens, tags, floats;
     Font F => Kit.Font;
     public static readonly Color Ink = Kit.Hex("#2b1b12"), Cream = Kit.Hex("#fff6e5"), Tomato = Kit.Hex("#ff5a3c"), Mustard = Kit.Hex("#ffc53d"), Mint = Kit.Hex("#5de0a5"), Sky = Kit.Hex("#46b8ff");
+    static readonly Color Dim = new Color(0.22f, 0.11f, 0.05f, 0.72f);   // secondary buttons: readable on the light floor
 
     // ---- input
     public Vector2 Joy { get; private set; }
@@ -53,7 +54,7 @@ public class UI : MonoBehaviour
         BuildHud();
         screens = Fill("screens", root);
         bigText = Txt(root, "", 230, new Vector2(.5f, .56f), Vector2.zero, Cream, TextAnchor.MiddleCenter, 1400);
-        bigText.fontStyle = FontStyle.BoldAndItalic; Outline(bigText, 7); bigText.gameObject.SetActive(false);
+        bigText.fontStyle = FontStyle.Italic; Outline(bigText, 7); bigText.gameObject.SetActive(false);
         toastText = Txt(root, "", 40, new Vector2(.5f, 1), new Vector2(0, -420), Cream, TextAnchor.MiddleCenter, 1300);
         Outline(toastText, 3); toastText.gameObject.SetActive(false);
     }
@@ -102,9 +103,10 @@ public class UI : MonoBehaviour
     }
     Text Txt(Transform p, string s, int size, Vector2 anchor, Vector2 pos, Color c, TextAnchor align = TextAnchor.MiddleCenter, float w = 700)
     {
+        size = Mathf.Max(size, 30);   // readable floor: Lilita below this turns to mush on phones and short desktop windows
         var rt = Rect("txt", p, anchor, pos, new Vector2(w, size * 1.4f));
         var t = rt.gameObject.AddComponent<Text>();
-        t.font = F; t.fontSize = size; t.fontStyle = FontStyle.Bold; t.alignment = align; t.color = c; t.text = s;
+        t.font = F; t.fontSize = size; t.fontStyle = FontStyle.Normal; t.alignment = align; t.color = c; t.text = s;
         t.raycastTarget = false; t.horizontalOverflow = HorizontalWrapMode.Overflow; t.verticalOverflow = VerticalWrapMode.Overflow;
         return t;
     }
@@ -115,8 +117,9 @@ public class UI : MonoBehaviour
         var rt = Box(p, anchor, pos, size, bg, true);
         var b = rt.gameObject.AddComponent<Button>(); b.targetGraphic = rt.GetComponent<Image>();
         b.onClick.AddListener(() => { Sfx.I.Click(); onClick(); });
+        rt.gameObject.AddComponent<Press>().Sink = 8;   // the face drops onto its shadow
         var t = Txt(rt, label, fs, new Vector2(.5f, .5f), Vector2.zero, fg, TextAnchor.MiddleCenter, size.x);
-        t.fontStyle = FontStyle.Bold;
+        t.fontStyle = FontStyle.Normal;
         return b;
     }
 
@@ -281,9 +284,9 @@ public class UI : MonoBehaviour
     Text Title(Transform p, string s, float y, int size, Color c)
     {
         var sh = Txt(p, s, size, new Vector2(.5f, 1), new Vector2(0, y - 12), Kit.Hex("#7a2412"), TextAnchor.MiddleCenter, 1400);
-        sh.fontStyle = FontStyle.BoldAndItalic;
+        sh.fontStyle = FontStyle.Italic;
         var t = Txt(p, s, size, new Vector2(.5f, 1), new Vector2(0, y), c, TextAnchor.MiddleCenter, 1400);
-        t.fontStyle = FontStyle.BoldAndItalic;
+        t.fontStyle = FontStyle.Italic;
         return t;
     }
 
@@ -294,6 +297,8 @@ public class UI : MonoBehaviour
         var g = Game.I;
         var shade = Box(s, new Vector2(.5f, .5f), Vector2.zero, Vector2.zero, new Color(0.12f, 0.06f, 0.02f, 0.35f));
         shade.anchorMin = Vector2.zero; shade.anchorMax = Vector2.one; shade.sizeDelta = Vector2.zero;
+        Kit.Scrim(s, true, 760, new Color(0.14f, 0.07f, 0.03f, 0.75f));
+        Kit.Scrim(s, false, 820, new Color(0.14f, 0.07f, 0.03f, 0.8f));
         var t = Title(s, "ORDER UP!", -230, 190, Mustard);
         StartCoroutine(Wobble(t.transform));
         var tag = Txt(s, "CO-OP KITCHEN CHAOS  -  SOLO OR ONLINE", 34, new Vector2(.5f, 1), new Vector2(0, -360), Cream, TextAnchor.MiddleCenter, 1000);
@@ -305,7 +310,7 @@ public class UI : MonoBehaviour
             var kd = Kitchens.All[i];
             bool sel = kd.id == g.Def.id;
             var card = Box(s, new Vector2(.5f, 1), new Vector2(i == 0 ? -240 : 240, -560), new Vector2(450, 270), sel ? kd.wall : new Color(1, 1, 1, 0.18f), true);
-            Txt(card, kd.name, 50, new Vector2(.5f, .5f), new Vector2(0, 80), Color.white, TextAnchor.MiddleCenter, 440).fontStyle = FontStyle.BoldAndItalic;
+            Txt(card, kd.name, 50, new Vector2(.5f, .5f), new Vector2(0, 80), Color.white, TextAnchor.MiddleCenter, 440).fontStyle = FontStyle.Italic;
             var tl = Txt(card, kd.tagline, 25, new Vector2(.5f, .5f), new Vector2(0, 18), Kit.A(Color.white, 0.85f), TextAnchor.MiddleCenter, 400);
             tl.horizontalOverflow = HorizontalWrapMode.Wrap; tl.rectTransform.sizeDelta = new Vector2(400, 70); tl.fontStyle = FontStyle.Normal;
             int stars = g.Save.Stars(kd.id);
@@ -327,9 +332,9 @@ public class UI : MonoBehaviour
         var solo = Btn(s, "COOK SOLO", new Vector2(.5f, 0), new Vector2(-240, 560), new Vector2(450, 170), Tomato, Color.white, () => g.StartSolo(), 58);
         StartCoroutine(Pulse(solo.transform));
         Btn(s, "CO-OP ONLINE", new Vector2(.5f, 0), new Vector2(240, 560), new Vector2(450, 170), Mint, Ink, () => g.OpenOnline(), 52);
-        Btn(s, "LEADERBOARD", new Vector2(.5f, 0), new Vector2(0, 375), new Vector2(930, 120), new Color(1, 1, 1, 0.2f), Mustard, () => WebBridge.ShowBoard(Game.I.Def.id), 46);
-        Btn(s, "HOW TO PLAY", new Vector2(.5f, 0), new Vector2(-240, 220), new Vector2(450, 110), new Color(1, 1, 1, 0.16f), Cream, ShowHowTo, 38);
-        Btn(s, g.Save.muted ? "SOUND OFF" : "SOUND ON", new Vector2(.5f, 0), new Vector2(240, 220), new Vector2(450, 110), new Color(1, 1, 1, 0.16f), Cream, () => { g.ToggleMute(); ShowMenu(); }, 38);
+        Btn(s, "LEADERBOARD", new Vector2(.5f, 0), new Vector2(0, 375), new Vector2(930, 120), Dim, Mustard, () => WebBridge.ShowBoard(Game.I.Def.id), 46);
+        Btn(s, "HOW TO PLAY", new Vector2(.5f, 0), new Vector2(-240, 220), new Vector2(450, 110), Dim, Cream, ShowHowTo, 38);
+        Btn(s, g.Save.muted ? "SOUND OFF" : "SOUND ON", new Vector2(.5f, 0), new Vector2(240, 220), new Vector2(450, 110), Dim, Cream, () => { g.ToggleMute(); ShowMenu(); }, 38);
     }
 
     IEnumerator Wobble(Transform t) { while (t) { t.localRotation = Quaternion.Euler(0, 0, Mathf.Sin(Time.unscaledTime * 2.2f) * 2.5f); yield return null; } }
@@ -376,8 +381,8 @@ public class UI : MonoBehaviour
         Title(s, online ? "MENU" : "PAUSED", -520, 120, Cream);
         if (online) Txt(s, "Your crew is still cooking!", 36, new Vector2(.5f, 1), new Vector2(0, -640), Cream);
         Btn(s, "RESUME", new Vector2(.5f, .5f), new Vector2(0, 140), new Vector2(600, 160), Mint, Ink, () => Game.I.Resume(), 60);
-        if (!online) Btn(s, "RESTART", new Vector2(.5f, .5f), new Vector2(0, -60), new Vector2(600, 130), new Color(1, 1, 1, 0.18f), Cream, () => { Game.I.Resume(); Game.I.StartSolo(); }, 46);
-        Btn(s, "QUIT SHIFT", new Vector2(.5f, .5f), new Vector2(0, -230), new Vector2(600, 130), new Color(1, 1, 1, 0.18f), Tomato, () => Game.I.Quit(), 46);
+        if (!online) Btn(s, "RESTART", new Vector2(.5f, .5f), new Vector2(0, -60), new Vector2(600, 130), Dim, Cream, () => { Game.I.Resume(); Game.I.StartSolo(); }, 46);
+        Btn(s, "QUIT SHIFT", new Vector2(.5f, .5f), new Vector2(0, -230), new Vector2(600, 130), Dim, Tomato, () => Game.I.Quit(), 46);
     }
 
     Text rankText; Game.RankMsg lastRank;
@@ -405,12 +410,12 @@ public class UI : MonoBehaviour
         float y = 560;
         var again = Btn(s, online ? "COOK ONLINE AGAIN" : "COOK AGAIN", new Vector2(.5f, 0), new Vector2(0, y), new Vector2(680, 160), Tomato, Color.white, () => { if (online) g.OpenOnline(); else g.StartSolo(); }, 54);
         StartCoroutine(Pulse(again.transform));
-        var share = Btn(s, "SHARE", new Vector2(.5f, 0), new Vector2(-320, y - 190), new Vector2(290, 120), new Color(1, 1, 1, 0.18f), Cream, () => { }, 42);
+        var share = Btn(s, "SHARE", new Vector2(.5f, 0), new Vector2(-320, y - 190), new Vector2(290, 120), Dim, Cream, () => { }, 42);
         share.gameObject.AddComponent<ShareOnPress>().Text = () => g.ShareText();
         var other = Kitchens.All[(Array.IndexOf(Kitchens.All, g.Def) + 1) % Kitchens.All.Length];
-        Btn(s, other.name, new Vector2(.5f, 0), new Vector2(0, y - 190), new Vector2(290, 120), new Color(1, 1, 1, 0.18f), other.accent, () => g.SelectKitchen(other.id), 34);
-        Btn(s, "MENU", new Vector2(.5f, 0), new Vector2(320, y - 190), new Vector2(290, 120), new Color(1, 1, 1, 0.18f), Cream, () => g.Quit(), 42);
-        Btn(s, "LEADERBOARD", new Vector2(.5f, 0), new Vector2(0, y - 345), new Vector2(930, 110), new Color(1, 1, 1, 0.12f), Mustard, () => WebBridge.ShowBoard(g.Def.id), 40);
+        Btn(s, other.name, new Vector2(.5f, 0), new Vector2(0, y - 190), new Vector2(290, 120), Dim, other.accent, () => g.SelectKitchen(other.id), 34);
+        Btn(s, "MENU", new Vector2(.5f, 0), new Vector2(320, y - 190), new Vector2(290, 120), Dim, Cream, () => g.Quit(), 42);
+        Btn(s, "LEADERBOARD", new Vector2(.5f, 0), new Vector2(0, y - 345), new Vector2(930, 110), Dim, Mustard, () => WebBridge.ShowBoard(g.Def.id), 40);
     }
 
     IEnumerator StarSound(float d) { yield return new WaitForSecondsRealtime(d); Sfx.I.Star(); }
