@@ -28,7 +28,22 @@ public class Sfx : MonoBehaviour
     public void SetMuted(bool m) { Muted = m; AudioListener.volume = m ? 0 : 1; }
     bool unlocked;
     public void Unlock() { unlocked = true; }
-    public void Music(bool on) { if (on) { if (!music.isPlaying) music.Play(); } else music.Stop(); }
+    public void Music(bool on) { if (on) { if (!music.isPlaying) { music.Play(); clockStart = Time.unscaledTime; } } else music.Stop(); }
+
+    // ---- KITCHEN BEATS: the music is 126 bpm and the clip is a whole number of bars, so the beat grid is the
+    // playback position. Each device judges its own taps against the music it hears.
+    public const float Bpm = 126f, BeatLen = 60f / Bpm;
+    float clockStart;
+    public float BeatTime => music.isPlaying && music.time > 0.01f ? music.time : Time.unscaledTime - clockStart;
+    public float Phase01 => Mathf.Repeat(BeatTime / BeatLen, 1f);
+    // a little more room after the beat than before it (touch + audio latency land late)
+    public bool OnBeat()
+    {
+        float b = BeatTime / BeatLen;
+        float err = (b - Mathf.Round(b)) * BeatLen;
+        return err >= -0.10f && err <= 0.15f;
+    }
+    public void BeatHit(int streak) { Play(clink, 0.3f, 1.1f + Mathf.Min(streak, 12) * 0.05f); Chop(); }
 
     void Play(AudioClip c, float vol, float pitch = 1f)
     {

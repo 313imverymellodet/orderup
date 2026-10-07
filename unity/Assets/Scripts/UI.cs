@@ -143,6 +143,8 @@ public class UI : MonoBehaviour
         actBtn = a.gameObject.AddComponent<HoldButton>();
         actBtn.OnDown = () => actPresses++;
         Img(a, ring, new Vector2(.5f, .5f), Vector2.zero, new Vector2(300, 300)).color = new Color(1, 1, 1, 0.8f);
+        // beat ring: shrinks onto the button on every beat of the music
+        beatRing = Img(a, ring, new Vector2(.5f, .5f), Vector2.zero, new Vector2(300, 300)); beatRing.raycastTarget = false;
         actText = Txt(a, "", 40, new Vector2(.5f, .5f), Vector2.zero, Color.white, TextAnchor.MiddleCenter, 280);
         actText.horizontalOverflow = HorizontalWrapMode.Wrap; actText.rectTransform.sizeDelta = new Vector2(250, 120); Outline(actText, 2);
         var d = Rect("dash", hud, new Vector2(1, 0), new Vector2(-440, 150), new Vector2(170, 170));
@@ -159,6 +161,10 @@ public class UI : MonoBehaviour
         timeText = Txt(bar, "3:00", 60, new Vector2(.5f, .5f), Vector2.zero, Cream, TextAnchor.MiddleCenter, 300);
         Outline(timeText, 3);
         Btn(bar, "II", new Vector2(1, .5f), new Vector2(-70, 0), new Vector2(90, 80), new Color(1, 1, 1, 0.2f), Color.white, () => Game.I.Pause(), 40);
+
+        // crew beat streak meter
+        streakText = Txt(hud, "", 40, new Vector2(1, 0), new Vector2(-210, 450), Mint, TextAnchor.MiddleCenter, 420);
+        streakText.fontStyle = FontStyle.Italic; Outline(streakText, 3);
 
         // order tickets (scaled up on landscape screens, where the canvas matches height)
         tickets = Rect("tickets", hud, new Vector2(0, 1), Vector2.zero, Vector2.zero);
@@ -189,8 +195,21 @@ public class UI : MonoBehaviour
         img.color = Kit.A(string.IsNullOrEmpty(s) ? Color.Lerp(Tomato, Color.gray, 0.55f) : s == "SERVE!" ? Mint : Tomato, 0.92f);
     }
 
+    Image beatRing; Text streakText; float beatFlash;
+    public void BeatHit() => beatFlash = 1f;
+
     public void UpdateHud(Game g)
     {
+        // beat ring + streak meter + the kitchen lights pulse with the music
+        float ph = Sfx.I.Phase01;
+        beatFlash = Mathf.Max(0, beatFlash - Time.unscaledDeltaTime * 3f);
+        beatRing.rectTransform.localScale = Vector3.one * Mathf.Lerp(1.0f, 1.55f, 1f - ph);
+        beatRing.color = Color.Lerp(Kit.A(Color.white, 0.15f + 0.6f * ph * ph), Mint, beatFlash);
+        int bs = g.BeatStreak;
+        streakText.text = bs >= 2 ? "BEAT x" + bs + "   TIPS x" + g.TipMult.ToString("0.00") : "";
+        streakText.color = bs >= 10 ? Mustard : Mint;
+        streakText.rectTransform.localScale = Vector3.one * (1f + beatFlash * 0.15f);
+        g.Pulse(Mathf.Exp(-ph * 7f));
         scoreText.text = g.Score.ToString();
         int t = Mathf.CeilToInt(Mathf.Max(0, g.TimeLeft));
         timeText.text = (t / 60) + ":" + (t % 60).ToString("00");
@@ -301,7 +320,7 @@ public class UI : MonoBehaviour
         Kit.Scrim(s, false, 820, new Color(0.14f, 0.07f, 0.03f, 0.8f));
         var t = Title(s, "ORDER UP!", -230, 190, Mustard);
         StartCoroutine(Wobble(t.transform));
-        var tag = Txt(s, "CO-OP KITCHEN CHAOS  -  SOLO OR ONLINE", 34, new Vector2(.5f, 1), new Vector2(0, -360), Cream, TextAnchor.MiddleCenter, 1000);
+        var tag = Txt(s, "COOK TO THE BEAT  -  SOLO OR ONLINE CO-OP", 34, new Vector2(.5f, 1), new Vector2(0, -360), Cream, TextAnchor.MiddleCenter, 1000);
         Outline(tag, 2);
 
         // kitchens
@@ -355,7 +374,7 @@ public class UI : MonoBehaviour
         {
             ("burger-cheese", "Tickets at the top show what to cook.\nServe them before the timer runs out!"),
             ("tomato", "Grab ingredients from the crates.\nLettuce, tomato and cheese need CHOPPING."),
-            ("cabbage", "Put food on a board, then HOLD the\naction button to chop."),
+            ("cabbage", "KITCHEN BEATS: on a board, TAP to chop\nON THE BEAT. Twice as fast, bigger tips!"),
             ("meat-raw", "Patties go on the stove. Grab them when\ncooked - leave them and they BURN!"),
             ("plate", "Put ingredients on a plate, then take\nthe finished dish to the SERVING HATCH."),
             ("salad", "Move: drag left side / WASD.  Action:\nbutton / SPACE.  Dash: DASH / SHIFT."),
@@ -400,11 +419,12 @@ public class UI : MonoBehaviour
         }
         var sc = Txt(s, g.Score + " POINTS", 80, new Vector2(.5f, 1), new Vector2(0, -640), Color.white); Outline(sc, 4);
         Txt(s, g.Served + " SERVED   -   " + g.Failed + " MISSED" + (g.Chefs.Count > 1 ? "   -   CREW OF " + g.Chefs.Count : ""), 36, new Vector2(.5f, 1), new Vector2(0, -730), Cream, TextAnchor.MiddleCenter, 1000);
-        rankText = Txt(s, best ? "NEW PERSONAL BEST!" : "BEST " + g.Save.Best(g.Def.id), 36, new Vector2(.5f, 1), new Vector2(0, -800), best ? Mint : Cream, TextAnchor.MiddleCenter, 1000);
+        Txt(s, g.OnBeatHits + " ON THE BEAT   -   BEST STREAK x" + g.BestStreak, 34, new Vector2(.5f, 1), new Vector2(0, -778), Mint, TextAnchor.MiddleCenter, 1000);
+        rankText = Txt(s, best ? "NEW PERSONAL BEST!" : "BEST " + g.Save.Best(g.Def.id), 36, new Vector2(.5f, 1), new Vector2(0, -832), best ? Mint : Cream, TextAnchor.MiddleCenter, 1000);
         if (lastRank != null) ApplyRank();
         // next star goal
         float k1 = 1f + 0.55f * Mathf.Max(0, g.Chefs.Count - 1);
-        if (stars < 3) Txt(s, "NEXT STAR AT " + Mathf.CeilToInt(g.Def.stars[stars] * k1), 30, new Vector2(.5f, 1), new Vector2(0, -860), Kit.A(Cream, 0.7f), TextAnchor.MiddleCenter, 1000);
+        if (stars < 3) Txt(s, "NEXT STAR AT " + Mathf.CeilToInt(g.Def.stars[stars] * k1), 30, new Vector2(.5f, 1), new Vector2(0, -884), Kit.A(Cream, 0.7f), TextAnchor.MiddleCenter, 1000);
 
         bool online = g.Mode != Game.Net.Solo;
         float y = 560;

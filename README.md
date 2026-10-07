@@ -1,10 +1,23 @@
 # ORDER UP!
 
-A co-op kitchen game in the style of Overcooked. Chop, cook, plate and serve against the clock, either solo or with up to 4 chefs online. It's a Unity 6 WebGL game that runs on phones and desktop and is hosted on Vercel.
+A kitchen game that cooks to the music. Chop, cook, plate and serve against the clock, either solo or with up to 4 chefs online. It's a Unity 6 WebGL game that runs on phones and desktop and is hosted on Vercel.
+
+## The hook: KITCHEN BEATS
+The kitchen runs on the music (126 bpm).
+- **Chopping is tapping.** At a board with a raw ingredient, every tap is a chop stroke. **On the beat** a tap counts double (4 taps finish it); **off the beat** it counts half. Holding the button still chops, but at half the old speed.
+- **Serving on the beat** pays a 1.5x tip.
+- **Crew beat streak:** every on-beat chop or serve adds to a streak that the whole crew shares. It multiplies every tip by up to 2x (+5% per step, capped at 20). An off-beat chop breaks it.
+- **On screen:**
+  - A beat ring shrinks onto the action button on every beat and flashes green on a hit.
+  - The kitchen lights pulse to the music.
+  - The "BEAT xN · TIPS xM" meter sits above the button.
+  - Results show on-beat hits and the best streak.
+- **Online:** each device judges its own taps against the music it hears and sends a running on-beat count (`b`) with its inputs; the host credits them and broadcasts the streak (`bs`). Older clients simply count as off-beat.
+- Analytics: `beats_best_streak`, `beats_on_beat`.
 
 ## How to play
 - **Tickets** at the top show what to cook. Serve each one before its timer runs out.
-- Grab ingredients from the **crates**. Lettuce, tomato and cheese need **chopping**: put them on a board and HOLD the action button. **Patties** go on the stove. Pick them up once cooked, because if you leave them too long they burn and have to be trashed.
+- Grab ingredients from the **crates**. Lettuce, tomato and cheese need **chopping**: put them on a board and TAP the action button on the beat. **Patties** go on the stove. Pick them up once cooked, because if you leave them too long they burn and have to be trashed.
 - Put the ingredients on a **plate** (from the plate stack) and take the finished dish to the **serving hatch**. Fast service earns tips, and serving several in a row builds a combo bonus.
 - Controls: drag on the left side of the screen (or use WASD) to move, press the action button (or SPACE) to act, and use DASH (or SHIFT) to dash.
 

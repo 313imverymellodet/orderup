@@ -22,6 +22,12 @@ public class Game : MonoBehaviour
     public class Order { public int recipe; public float left, total; public int id; }
     public readonly List<Order> Orders = new List<Order>();
     public int Score, Served, Failed, Combo;
+    // KITCHEN BEATS: tap-chopping and serving on the beat. On-beat chops count double, off-beat half;
+    // on-beat serves tip 1.5x; the crew's beat streak multiplies every tip.
+    public int BeatStreak, BestStreak, OnBeatHits;
+    public float TipMult => 1f + 0.05f * Mathf.Min(BeatStreak, 20);
+    int myBeats; bool pressOnBeat; float autoBeatT;
+    readonly Dictionary<string, int> lastBeats = new Dictionary<string, int>();
     public float TimeLeft, Countdown;
     public float Shift = 180f;          // dev: ?dev=1&short=1 for 25 s shifts
     float orderT, snapT, inT, camShake;
@@ -44,7 +50,8 @@ public class Game : MonoBehaviour
         WebGLInput.captureAllKeyboardInput = false;
 #endif
         var url = Application.absoluteURL;
-        Dev = url.Contains("dev=1") && (url.Contains("://localhost") || url.Contains("://127.0.0.1"));   // cheats never on the live site AutoPlay = url.Contains("bot=1"); AutoDrive = AutoPlay || (Dev && url.Contains("autodrive=1"));
+        Dev = url.Contains("dev=1") && (url.Contains("://localhost") || url.Contains("://127.0.0.1"));   // cheats never on the live site
+        AutoPlay = url.Contains("bot=1"); AutoDrive = AutoPlay || (Dev && url.Contains("autodrive=1"));
         DevCam.Install(Dev);
         if (Dev && url.Contains("short=1")) Shift = 25f;
         var json = PlayerPrefs.GetString("ou_save", "");
@@ -90,6 +97,9 @@ public class Game : MonoBehaviour
         Cam.backgroundColor = Color.Lerp(Def.wall, Color.black, 0.62f);
     }
 
+    // kitchen lights pulse on the beat while cooking
+    public void Pulse(float k) { if (sun) sun.intensity = State == St.Playing ? 0.78f + 0.14f * k : 0.82f; }
+
     public void SelectKitchen(string id) { LoadKitchen(id); Persist(); GoMenu(); }
 
     void ClearChefs() { foreach (var c in Chefs) if (c) Destroy(c.gameObject); Chefs.Clear(); Me = null; }
@@ -124,6 +134,7 @@ public class Game : MonoBehaviour
         if (K.PlateStack != null) K.PlateStack.PlateCount = 4;
         Orders.Clear(); plateBack.Clear(); events.Clear(); lastAct.Clear();
         Score = Served = Failed = Combo = 0; TimeLeft = Shift; orderT = 0; myAct = 0;
+        BeatStreak = BestStreak = OnBeatHits = 0; myBeats = 0; lastBeats.Clear();
     }
 
     // ---------------------------------------------------------------- solo
@@ -161,7 +172,7 @@ public class Game : MonoBehaviour
             Countdown -= dt;
             int a = Mathf.CeilToInt(before - 0.4f), b = Mathf.CeilToInt(Countdown - 0.4f);
             if (a != b && b >= 0) { UI.I.Big(b == 0 ? "GO!" : b.ToString(), b == 0); Sfx.I.Beep(b == 0); }
-            if (Countdown <= 0.4f) { State = St.Playing; if (Mode != Net.Client) { SpawnOrder(); orderT = 7f; } }
+            if (Countdown <= 0.4f) { State = St.Playing; if (Mode != Net.Client) { SpawnOrder(); orderT = 7f; } UI.I.Toast("CHOP ON THE BEAT: TAP WHEN THE RING HITS!"); }
         }
 
         // ---- local chef
@@ -174,21 +185,27 @@ public class Game : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.J)) act = true;
             if (Input.GetKey(KeyCode.Space) || Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.J)) hold = true;
             if (Input.GetKeyDown(KeyCode.LeftShift) || Input.GetKeyDown(KeyCode.K)) dash = true;
-            if (AutoDrive) { input = Bot.Input(this, Me, out act, out hold); dash = false; }
+            if (AutoDrive)
+            {
+                input = Bot.Input(this, Me, out act, out hold); dash = false;
+                // the autopilot taps its chops on the beat
+                if (hold && CanChop(Me)) { hold = false; autoBeatT -= dt; if (Sfx.I.OnBeat() && autoBeatT <= 0) { act = true; autoBeatT = Sfx.BeatLen * 0.6f; } }
+            }
             if (State == St.Countdown) { input = Vector2.zero; act = false; hold = false; }
             Me.Drive(input, dash, dt, K, Chefs);
-            if (act) myAct++;
+            bool beat = act && Sfx.I.OnBeat();
+            if (act) { myAct++; if (beat) myBeats++; }
             if (Mode == Net.Client)
             {
                 if (act || (inT -= Time.unscaledDeltaTime) <= 0)
                 {
                     inT = 1f / 15f;
-                    WebBridge.NetSend("{\"t\":\"in\",\"x\":" + F(Me.transform.position.x) + ",\"z\":" + F(Me.transform.position.z) + ",\"y\":" + F(Me.Yaw) + ",\"a\":" + myAct + ",\"c\":" + (hold ? 1 : 0) + "}");
+                    WebBridge.NetSend("{\"t\":\"in\",\"x\":" + F(Me.transform.position.x) + ",\"z\":" + F(Me.transform.position.z) + ",\"y\":" + F(Me.Yaw) + ",\"a\":" + myAct + ",\"b\":" + myBeats + ",\"c\":" + (hold ? 1 : 0) + "}");
                 }
             }
             else
             {
-                if (act) Interact(Me);
+                if (act) Press(Me, beat);
                 Me.Chopping = hold && CanChop(Me);
             }
         }
@@ -219,7 +236,7 @@ public class Game : MonoBehaviour
             var st = K.Facing(c.transform.position, c.Yaw);
             if (st == null || st.Type != StType.Board || !CanChop(c)) { c.Chopping = false; continue; }
             float before = st.Progress;
-            st.Progress += dt / 2.3f;
+            st.Progress += dt / 4.6f;   // holding still chops, at half speed: tapping on the beat is the fast way
             if (Mathf.FloorToInt(before * 8) != Mathf.FloorToInt(st.Progress * 8)) Emit("chop", st.Pos);
             if (st.Progress >= 1f) { st.Item = It.Ingr(It.IngOf(st.Item), IState.Prepped); st.Progress = 0; Emit("chopped", st.Pos); }
         }
@@ -291,6 +308,15 @@ public class Game : MonoBehaviour
         switch (parts[0])
         {
             case "chop": Sfx.I.Chop(); break;
+            case "beat":
+            {
+                int n = parts.Length > 1 ? int.Parse(parts[1]) : 1;
+                Sfx.I.BeatHit(n);
+                UI.I.Float(at + Vector3.up * 1.3f, n >= 3 ? "ON BEAT x" + n : "ON BEAT!", Kit.Hex("#7cf56a"), n % 10 == 0 ? 1.4f : 0.8f);
+                UI.I.BeatHit();
+                break;
+            }
+            case "offbeat": Sfx.I.Nope(); UI.I.Float(at + Vector3.up * 1.3f, "OFF BEAT", new Color(1, 1, 1, 0.8f), 0.8f); break;
             case "chopped": Sfx.I.Ding(); UI.I.Float(at + Vector3.up * 1.4f, "CHOPPED!", Kit.Hex("#7cf56a")); break;
             case "cooked": Sfx.I.Ding(); UI.I.Float(at + Vector3.up * 1.4f, "COOKED!", Kit.Hex("#ffb13b")); break;
             case "sizzle": Sfx.I.Sizzle(); UI.I.Float(at + Vector3.up * 1.6f, "BURNING!", Kit.Hex("#ff4b3b")); break;
@@ -312,6 +338,26 @@ public class Game : MonoBehaviour
                 UI.I.Float(at + Vector3.up * 1.6f, "ORDER LOST  -10", Kit.Hex("#ff4b3b"));
                 break;
         }
+    }
+
+    // ---------------------------------------------------------------- beats
+    // A press: a chop stroke if you're at a raw ingredient on a board, otherwise a normal interaction.
+    void Press(Chef c, bool onBeat)
+    {
+        if (State != St.Playing) return;
+        if (CanChop(c)) { ChopTap(c, onBeat); return; }
+        pressOnBeat = onBeat;
+        Interact(c);
+        pressOnBeat = false;
+    }
+
+    void ChopTap(Chef c, bool onBeat)
+    {
+        var st = K.Facing(c.transform.position, c.Yaw);
+        st.Progress += onBeat ? 0.25f : 0.125f;
+        if (onBeat) { BeatStreak++; OnBeatHits++; BestStreak = Mathf.Max(BestStreak, BeatStreak); Emit("beat:" + BeatStreak, st.Pos); }
+        else { if (BeatStreak >= 4) Emit("offbeat", st.Pos); else Emit("chop", st.Pos); BeatStreak = 0; }
+        if (st.Progress >= 1f) { st.Item = It.Ingr(It.IngOf(st.Item), IState.Prepped); st.Progress = 0; Emit("chopped", st.Pos); }
     }
 
     // ---------------------------------------------------------------- interactions
@@ -401,7 +447,9 @@ public class Game : MonoBehaviour
         if (match == null) { Emit("nope:" + (Recipes.ByMask(mask) == null ? "NOT FINISHED" : "NOBODY ORDERED THAT"), at); return; }
         var r = Recipes.All[match.recipe];
         Combo++;
-        int tip = Mathf.RoundToInt(r.value * 0.6f * Mathf.Clamp01(match.left / match.total));
+        if (pressOnBeat) { BeatStreak++; OnBeatHits++; BestStreak = Mathf.Max(BestStreak, BeatStreak); }
+        // tips: fresher is better, an on-beat serve is 1.5x, and the crew's beat streak multiplies it
+        int tip = Mathf.RoundToInt(r.value * 0.6f * Mathf.Clamp01(match.left / match.total) * TipMult * (pressOnBeat ? 1.5f : 1f));
         int comboBonus = Mathf.Min(Combo - 1, 4) * 3;
         int pts = r.value + tip + comboBonus;
         Score += pts; Served++;
@@ -409,6 +457,7 @@ public class Game : MonoBehaviour
         c.Held = 0;
         plateBack.Add(6f);
         Emit("serve:" + match.recipe + ":" + pts, at);
+        if (pressOnBeat) Emit("beat:" + BeatStreak, at);
         if (Orders.Count == 0) orderT = Mathf.Min(orderT, 2f);
     }
 
@@ -425,7 +474,7 @@ public class Game : MonoBehaviour
             case StType.Trash: return h != 0 ? "TRASH" : "";
             case StType.Window: return It.IsPlate(h) && It.Mask(h) != 0 ? "SERVE!" : "";
             case StType.Board:
-                if (h == 0 && st.Item != 0 && It.NeedsChop(It.IngOf(st.Item)) && It.StateOf(st.Item) == IState.Raw) return "HOLD: CHOP";
+                if (h == 0 && st.Item != 0 && It.NeedsChop(It.IngOf(st.Item)) && It.StateOf(st.Item) == IState.Raw) return "TAP TO\nTHE BEAT";
                 break;
         }
         if (st.Item == 0) return h != 0 ? "PUT DOWN" : "";
@@ -457,6 +506,8 @@ public class Game : MonoBehaviour
         Persist();
         if (!AutoDrive) WebBridge.RunSubmit(Def.id, Score, stars, Chefs.Count);
         WebBridge.Event("shift_end_" + Def.id, Score);
+        WebBridge.Event("beats_best_streak", BestStreak);
+        WebBridge.Event("beats_on_beat", OnBeatHits);
         WebBridge.Gameplay(false);
         if (Mode == Net.Host) WebBridge.NetSend(Snapshot());
         StartCoroutine(ShowResultsSoon(stars, best));
@@ -481,7 +532,7 @@ public class Game : MonoBehaviour
     public string ShareText()
     {
         int stars = StarsFor(Score);
-        return "ORDER UP!  " + Def.name + "  " + new string('*', stars) + "  " + Score + " pts, " + Served + " dishes served" + (Chefs.Count > 1 ? " with a crew of " + Chefs.Count : "") + ". Can your kitchen beat it?";
+        return "ORDER UP!  " + Def.name + "  " + new string('*', stars) + "  " + Score + " pts, " + Served + " dishes served, best beat streak x" + BestStreak + (Chefs.Count > 1 ? " with a crew of " + Chefs.Count : "") + ". Can your kitchen keep the beat?";
     }
 
     // ======================================================================
@@ -489,12 +540,12 @@ public class Game : MonoBehaviour
     [Serializable] public class NetPlayer { public string id, name; public int look; }
     [Serializable] class Head { public string t; }
     [Serializable] class StartMsg { public string t, map, you, host; public NetPlayer[] players; }
-    [Serializable] class InMsg { public string t, from; public float x, z, y; public int a, c; }
+    [Serializable] class InMsg { public string t, from; public float x, z, y; public int a, b, c; }
     [Serializable] public class NetChef { public string id; public float x, z, y; public int h, c; }
     [Serializable] public class NetOrder { public int r, i; public float l, t; }
     [Serializable] class SnapMsg
     {
-        public string t; public int s, sc, sv, fl, pl; public float tl, cd;
+        public string t; public int s, sc, sv, fl, pl, bs; public float tl, cd;
         public int[] it, pr; public NetChef[] ch; public NetOrder[] od; public string[] ev;
     }
     [Serializable] class IdMsg { public string t, id, msg; }
@@ -552,9 +603,13 @@ public class Game : MonoBehaviour
         if (!lastAct.TryGetValue(m.from, out var last)) last = 0;
         int presses = Mathf.Clamp(m.a - last, 0, 3);
         lastAct[m.from] = Mathf.Max(last, m.a);
+        // the client judged its own taps against the music it hears; the first `beats` new presses were on the beat
+        if (!lastBeats.TryGetValue(m.from, out var lastB)) lastB = 0;
+        int beats = Mathf.Clamp(m.b - lastB, 0, presses);
+        lastBeats[m.from] = Mathf.Max(lastB, m.b);
         // act on where the chef reports being right now
         c.transform.position = new Vector3(m.x, 0, m.z); c.Yaw = m.y;
-        for (int i = 0; i < presses; i++) Interact(c);
+        for (int i = 0; i < presses; i++) Press(c, i < beats);
         c.Chopping = m.c == 1 && CanChop(c);
     }
 
@@ -562,7 +617,7 @@ public class Game : MonoBehaviour
     {
         var s = new SnapMsg
         {
-            t = "snap", s = (int)State, sc = Score, sv = Served, fl = Failed, tl = TimeLeft, cd = Countdown,
+            t = "snap", s = (int)State, sc = Score, sv = Served, fl = Failed, tl = TimeLeft, cd = Countdown, bs = BeatStreak,
             pl = K.PlateStack != null ? K.PlateStack.PlateCount : 0,
             it = new int[K.Stations.Count], pr = new int[K.Stations.Count],
             ch = new NetChef[Chefs.Count], od = new NetOrder[Orders.Count], ev = events.ToArray(),
@@ -584,7 +639,7 @@ public class Game : MonoBehaviour
         if (s.it != null && s.it.Length == K.Stations.Count)
             for (int i = 0; i < K.Stations.Count; i++) { K.Stations[i].Item = s.it[i]; K.Stations[i].Progress = s.pr[i] / 100f; }
         if (K.PlateStack != null) K.PlateStack.PlateCount = s.pl;
-        Score = s.sc; Served = s.sv; Failed = s.fl; TimeLeft = s.tl;
+        Score = s.sc; Served = s.sv; Failed = s.fl; TimeLeft = s.tl; BeatStreak = s.bs; BestStreak = Mathf.Max(BestStreak, s.bs);
         if ((St)s.s == St.Playing && State == St.Countdown) State = St.Playing;
         if (s.ch != null)
             foreach (var nc in s.ch)
